@@ -14,6 +14,10 @@ log = logging.getLogger('remouse')
 # ev settings
 ev = namedtuple('ev_setting', ['min', 'max', 'res'])
 
+def get_monitors():
+    return [Monitor(x=2256, y=0, width=1920, height=1080, width_mm=600, height_mm=330, name='DP-3', is_primary=False)]
+
+
 class reMarkable1:
     """Class holding some input settings for a reMarkable tablet
 
@@ -216,8 +220,7 @@ def get_monitor(region, monitor_num, orientation):
 
     # compute size of box encompassing all screens
     max_x, max_y = 0, 0
-    monitors = [Monitor(x=2256, y=0, width=1920, height=1080, width_mm=600, height_mm=330, name='DP-3', is_primary=False)]
-    for m in monitors: 
+    for m in get_monitors(): 
         x = m.x + m.width
         y = m.y + m.height
         max_x = max(x, max_x)
