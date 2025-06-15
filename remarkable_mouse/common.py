@@ -15,7 +15,7 @@ log = logging.getLogger('remouse')
 ev = namedtuple('ev_setting', ['min', 'max', 'res'])
 
 def get_monitors():
-    return [Monitor(x=2256, y=0, width=1920, height=1080, width_mm=600, height_mm=330, name='DP-3', is_primary=False)]
+    return [Monitor(x=0, y=0, width=2256, height=1504, width_mm=280, height_mm=190, name='eDP-1', is_primary=False), Monitor(x=2256, y=0, width=1920, height=1080, width_mm=600, height_mm=330, name='DP-3', is_primary=False)]
 
 
 class reMarkable1:
