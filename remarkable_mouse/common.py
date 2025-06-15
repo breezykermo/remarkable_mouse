@@ -4,7 +4,7 @@ from collections import namedtuple
 import logging
 import struct
 import sys
-from screeninfo import get_monitors, Monitor
+from screeninfo import Monitor
 
 from .codes import codes, types
 
@@ -216,7 +216,8 @@ def get_monitor(region, monitor_num, orientation):
 
     # compute size of box encompassing all screens
     max_x, max_y = 0, 0
-    for m in get_monitors():
+    monitors = [Monitor(x=2256, y=0, width=1920, height=1080, width_mm=600, height_mm=330, name='DP-3', is_primary=False)]
+    for m in monitors: 
         x = m.x + m.width
         y = m.y + m.height
         max_x = max(x, max_x)
