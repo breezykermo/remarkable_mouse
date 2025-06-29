@@ -125,7 +125,7 @@ def connect_rm(*, address, key, password):
     else:
         raise ValueError(f"Could not detect reMarkable version. {pen_file}")
 
-    log.debug("Detected {type(rm).__name__}")
+    log.debug(f"Detected {type(rm).__name__}")
     log.debug(f'Pen:{rm.pen_file}\nTouch:{rm.touch_file}\nButton:{rm.button_file}')
 
     return rm

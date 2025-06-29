@@ -14,67 +14,80 @@ logging.basicConfig(format='%(message)s')
 log = logging.getLogger('remouse')
 
 def create_local_device(rm):
-    """
-    Create a virtual input device on this host that has the same
-    characteristics as a Wacom tablet.
+    """Create a virtual input device that mimics the reMarkable tablet
+
+    Args:
+        rm (reMarkable): tablet settings
 
     Returns:
-        virtual input device
+        libevdev.Device: configured virtual device
     """
-    import libevdev
+
     device = libevdev.Device()
 
-    # Set device properties to emulate those of Wacom tablets
-    device.name = 'reMarkable pen'
-
+    # Set device properties
+    device.name = "reMarkable pen"
     device.id = {
-        'bustype': 0x03, # usb
-        'vendor': 0x056a, # wacom
-        'product': 0,
-        'version': 54
+        "bustype": 0x18,  # BUS_USB
+        "vendor": 0x056a,  # Wacom
+        "product": 0x0001,
+        "version": 0x0100
     }
 
-    # Enable buttons supported by the digitizer
+    # Enable event types
+    device.enable(libevdev.EV_KEY)
+    device.enable(libevdev.EV_ABS)
+    device.enable(libevdev.EV_SYN)
+
+    # Configure absolute axes with reMarkable dimensions
+    # reMarkable 2 has 20967 x 15725 resolution
+    absinfo_x = libevdev.InputAbsInfo(
+        minimum=0,
+        maximum=20967,
+        resolution=100  # dots per mm
+    )
+    device.enable(libevdev.EV_ABS.ABS_X, absinfo_x)
+
+    absinfo_y = libevdev.InputAbsInfo(
+        minimum=0,
+        maximum=15725,
+        resolution=100  # dots per mm
+    )
+    device.enable(libevdev.EV_ABS.ABS_Y, absinfo_y)
+
+    # Pressure
+    absinfo_pressure = libevdev.InputAbsInfo(
+        minimum=0,
+        maximum=4095
+    )
+    device.enable(libevdev.EV_ABS.ABS_PRESSURE, absinfo_pressure)
+
+    # Distance (hover)
+    absinfo_distance = libevdev.InputAbsInfo(
+        minimum=0,
+        maximum=255
+    )
+    device.enable(libevdev.EV_ABS.ABS_DISTANCE, absinfo_distance)
+
+    # Tilt
+    absinfo_tilt = libevdev.InputAbsInfo(
+        minimum=-9000,
+        maximum=9000
+    )
+    device.enable(libevdev.EV_ABS.ABS_TILT_X, absinfo_tilt)
+    device.enable(libevdev.EV_ABS.ABS_TILT_Y, absinfo_tilt)
+
+    # Pen buttons
     device.enable(libevdev.EV_KEY.BTN_TOOL_PEN)
-    device.enable(libevdev.EV_KEY.BTN_TOOL_RUBBER)
     device.enable(libevdev.EV_KEY.BTN_TOUCH)
     device.enable(libevdev.EV_KEY.BTN_STYLUS)
     device.enable(libevdev.EV_KEY.BTN_STYLUS2)
-    device.enable(libevdev.EV_KEY.BTN_0)
-    device.enable(libevdev.EV_KEY.BTN_1)
-    device.enable(libevdev.EV_KEY.BTN_2)
 
-    inputs = (
-        # touch inputs
-        (libevdev.EV_ABS.ABS_MT_POSITION_X, *rm.touch_x),
-        (libevdev.EV_ABS.ABS_MT_POSITION_Y, *rm.touch_y),
-        (libevdev.EV_ABS.ABS_MT_PRESSURE, *rm.touch_pressure),
-        (libevdev.EV_ABS.ABS_MT_TOUCH_MAJOR, *rm.touch_major),
-        (libevdev.EV_ABS.ABS_MT_TOUCH_MINOR, *rm.touch_minor),
-        (libevdev.EV_ABS.ABS_MT_ORIENTATION, *rm.touch_orient),
-        (libevdev.EV_ABS.ABS_MT_SLOT, *rm.touch_slot),
-        (libevdev.EV_ABS.ABS_MT_TOOL_TYPE, *rm.touch_tool),
-        (libevdev.EV_ABS.ABS_MT_TRACKING_ID, *rm.touch_trackid),
+    # Create uinput device
+    uinput = device.create_uinput_device()
 
-        # pen inputs
-        (libevdev.EV_ABS.ABS_X, *rm.pen_x), # cyttps5_mt driver
-        (libevdev.EV_ABS.ABS_Y, *rm.pen_y), # cyttsp5_mt
-        (libevdev.EV_ABS.ABS_PRESSURE, *rm.pen_pressure),
-        (libevdev.EV_ABS.ABS_DISTANCE, *rm.pen_distance),
-        (libevdev.EV_ABS.ABS_TILT_X, *rm.pen_tilt_x),
-        (libevdev.EV_ABS.ABS_TILT_Y, *rm.pen_tilt_y)
-    )
-
-    for code, minimum, maximum, resolution in inputs:
-        device.enable(
-            code,
-            libevdev.InputAbsInfo(
-                minimum=minimum, maximum=maximum, resolution=resolution
-            )
-        )
-
-    return device.create_uinput_device()
-
+    log.info(f"Created virtual tablet device: {uinput.devnode}")
+    return uinput
 
 def read_tablet(rm, *, orientation, monitor_num, region, threshold, mode):
     """Pipe rM evdev events to local device
@@ -90,13 +103,12 @@ def read_tablet(rm, *, orientation, monitor_num, region, threshold, mode):
     local_device = create_local_device(rm)
     log.debug("Created virtual input device '{}'".format(local_device.devnode))
 
-    monitor, (tot_width, tot_height) = get_monitor(region, monitor_num, orientation)
-
-    pending_events = []
-
-    x = y = 0
+    # For Wayland, we don't need to do coordinate transformation
+    # The compositor will handle mapping tablet coordinates to screen
 
     stream = rm.pen
+    pending_events = []
+
     while True:
         try:
             # read evdev events from file stream
@@ -110,43 +122,19 @@ def read_tablet(rm, *, orientation, monitor_num, region, threshold, mode):
         if log.level == logging.DEBUG:
             log_event(e_time, e_millis, e_type, e_code, e_value)
 
-        try:
-            # intercept EV_ABS events and modify coordinates
-            if types[e_type] == 'EV_ABS':
-                # handle x direction
-                if codes[e_type][e_code] == 'ABS_X':
-                    x = e_value
-
-                # handle y direction
-                if codes[e_type][e_code] == 'ABS_Y':
-                    y = e_value
-
-                # map to screen coordinates so that region/monitor/orientation options are applied
-                mapped_x, mapped_y = rm.remap(
-                    x, y,
-                    rm.pen_x.max, rm.pen_y.max,
-                    monitor.width, monitor.height,
-                    mode, orientation
-                )
-
-                mapped_x += monitor.x
-                mapped_y += monitor.y
-
-                # map back to wacom coordinates to reinsert into event
-                mapped_x = mapped_x * rm.pen_x.max / tot_width
-                mapped_y = mapped_y * rm.pen_y.max / tot_height
-
-                # reinsert modified values into evdev event
-                if codes[e_type][e_code] == 'ABS_X':
-                    e_value = int(mapped_x)
-                if codes[e_type][e_code] == 'ABS_Y':
-                    e_value = int(mapped_y)
-
-        except KeyError as e:
-            log.debug(f"Invalid evdev event: type:{e_type} code:{e_code}")
-
-        # pass events directly to libevdev
-        e_bit = libevdev.evbit(e_type, e_code)
-        e = libevdev.InputEvent(e_bit, value=e_value)
-        local_device.send_events([e])
+        # Convert event type and code to libevdev format
+        if e_type == libevdev.EV_SYN.value and e_code == libevdev.EV_SYN.SYN_REPORT.value:
+            # Send all pending events
+            if pending_events:
+                local_device.send_events(pending_events)
+                pending_events = []
+        else:
+            # Queue event
+            try:
+                event_type = libevdev.evbit(e_type)
+                event_code = libevdev.evbit(e_type, e_code)
+                event = libevdev.InputEvent(event_code, value=e_value)
+                pending_events.append(event)
+            except (KeyError, ValueError) as e:
+                log.debug(f"Skipping unknown event: type={e_type} code={e_code}")
 
